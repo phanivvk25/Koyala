@@ -1,16 +1,13 @@
-"""Public API v1 (TDD §7.1).
-
-Authentication is not implemented yet: callers pass `X-User-Id`. This must be
-replaced by real auth (TDD §9) before any external deployment.
-"""
+"""Public API v1 (TDD §7.1). User endpoints require a bearer access token."""
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from koyala.api import schemas
+from koyala.api.auth_routes import CurrentUser
 from koyala.assessments import scoring
 from koyala.dialogue.orchestrator import Orchestrator, TurnResult
 from koyala.protocols import engine
@@ -20,8 +17,6 @@ from koyala.safety.risk_state import RiskStateStore
 from koyala.store import Session, SessionStore
 
 router = APIRouter(prefix="/v1")
-
-UserId = Annotated[str, Header(alias="X-User-Id", min_length=1, max_length=128)]
 
 ASSESSMENT_FOLLOW_UP_TEXT = (
     "Thank you for answering honestly. You mentioned having thoughts that you'd be better "
@@ -64,7 +59,7 @@ def _turn_out(result: TurnResult) -> schemas.TurnOut:
 @router.post("/sessions", response_model=schemas.CreateSessionResponse)
 def create_session(
     body: schemas.CreateSessionRequest,
-    user_id: UserId,
+    user_id: CurrentUser,
     sessions: Annotated[SessionStore, Depends(_sessions)],
 ) -> schemas.CreateSessionResponse:
     return schemas.CreateSessionResponse(session_id=sessions.create(user_id, body.language).id)
@@ -74,7 +69,7 @@ def create_session(
 def send_message(
     session_id: str,
     body: schemas.ChatRequest,
-    user_id: UserId,
+    user_id: CurrentUser,
     sessions: Annotated[SessionStore, Depends(_sessions)],
     orchestrator: Annotated[Orchestrator, Depends(_orchestrator)],
 ) -> schemas.TurnOut:
@@ -88,7 +83,7 @@ def send_message(
 def start_exercise(
     session_id: str,
     body: schemas.StartExerciseRequest,
-    user_id: UserId,
+    user_id: CurrentUser,
     sessions: Annotated[SessionStore, Depends(_sessions)],
     orchestrator: Annotated[Orchestrator, Depends(_orchestrator)],
 ) -> schemas.TurnOut:
@@ -131,7 +126,7 @@ def safety_resources(lang: str = "en") -> list[schemas.ResourceOut]:
 @router.post("/assessments", response_model=schemas.AssessmentOut)
 def submit_assessment(
     body: schemas.AssessmentRequest,
-    user_id: UserId,
+    user_id: CurrentUser,
     risk_states: Annotated[RiskStateStore, Depends(_risk_states)],
 ) -> schemas.AssessmentOut:
     try:

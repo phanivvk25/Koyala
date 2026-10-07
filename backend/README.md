@@ -12,6 +12,7 @@ Python/FastAPI implementation of the safety-critical core described in
 | `koyala/protocols/` | Deterministic exercise engine (YAML-defined) | TDD §7.3 |
 | `koyala/assessments/` | PHQ-9 / GAD-7 / WHO-5 scoring, PHQ-9 item-9 flag | PRD FR-ONB-06/09 |
 | `koyala/api/` | REST API v1 | TDD §7.1 |
+| `koyala/auth/` | Anonymous sign-up, JWT access tokens, rotating refresh tokens with reuse detection | PRD FR-ONB-04, TDD §9 |
 | `koyala/db/` | PostgreSQL schema, Alembic migrations, SQL stores, envelope encryption | TDD §6, §9 |
 | `koyala/content/` | Crisis templates, helplines, exercises (**placeholder — needs clinical approval**) | Safety Protocol §5 |
 
@@ -24,6 +25,24 @@ Python/FastAPI implementation of the safety-critical core described in
 - High risk is sticky (floored for 72 h); PHQ-9 item 9 > 0 floors risk for 14 days.
 - Every LLM reply passes the output guard (diagnosis, dosage, human claims, URLs, unapproved numbers); regenerate once, then safe fallback.
 - LLM outage → fallback template with helplines.
+
+## Authentication
+
+```
+POST /v1/auth/anonymous            → {user_id, access_token, refresh_token, expires_in}
+POST /v1/auth/refresh  {refresh_token} → new pair (old refresh token is consumed)
+POST /v1/auth/logout   {refresh_token} → 204, revokes that sign-in's tokens
+```
+
+- User endpoints require `Authorization: Bearer <access_token>`; the user id always
+  comes from the token.
+- Access tokens: HS256 JWT, 15 minutes. Refresh tokens: opaque, 30 days, single use,
+  stored only as SHA-256 hashes. Replaying a used refresh token revokes its whole
+  family (that device's sign-in) and returns 401.
+- `KOYALA_JWT_SECRET` (≥ 32 bytes) is required with a database; without one a random
+  dev secret is generated at startup.
+- Not yet: phone OTP / email sign-in (needs an SMS provider), rate limiting on
+  sign-up (planned at the API gateway, TDD §3).
 
 ## Run
 
@@ -77,7 +96,7 @@ export KOYALA_LLM_EFFORT=medium           # optional: low | medium | high
 
 ## Not yet production-ready
 
-- **Auth**: callers pass `X-User-Id`; replace with real auth before any deployment.
+- **Auth**: anonymous accounts only; phone/email sign-in and sign-up rate limiting still to do.
 - **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Assessments, mood logs, journal and safety plans are not stored yet.
 - **LLM**: Claude provider available; redaction does not yet cover person/place names (needs NER).
 - **Risk classifier (C4)**: interface only; lexicon is a placeholder needing clinical/linguistic review.

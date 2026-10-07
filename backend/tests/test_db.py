@@ -21,12 +21,13 @@ from koyala.db.migrate import alembic_config, upgrade
 from koyala.db.models import Base, ChatSession, Message, RiskEvent
 from koyala.db.stores import (
     HISTORY_WINDOW,
+    SqlAuthStore,
     SqlRiskStateStore,
     SqlSessionStore,
     make_session_factory,
 )
 from koyala.dialogue.llm import ChatMessage
-from koyala.main import create_app
+from koyala.main import Stores, create_app
 from koyala.protocols import engine as exercises
 from koyala.safety.models import RiskCategory, RiskTier
 from koyala.safety.risk_state import InMemoryRiskStateStore
@@ -226,15 +227,26 @@ def test_risk_events_audit_trail(db):
 # --- end to end ---------------------------------------------------------------
 
 
-def test_state_survives_app_restart(db_url, crypto):
-    headers = {"X-User-Id": "u1"}
+JWT_SECRET = "test-secret-" + "x" * 40
 
+
+def _sql_stores(db_url, crypto):
+    factory = make_session_factory(create_engine(db_url))
+    return Stores(
+        SqlSessionStore(factory, crypto),
+        SqlRiskStateStore(factory, crypto),
+        SqlAuthStore(factory, crypto),
+        persistent=True,
+    )
+
+
+def test_state_survives_app_restart(db_url, crypto):
     def app():
-        factory = make_session_factory(create_engine(db_url))
-        stores = (SqlSessionStore(factory, crypto), SqlRiskStateStore(factory, crypto))
-        return TestClient(create_app(stores=stores))
+        return TestClient(create_app(stores=_sql_stores(db_url, crypto), jwt_secret=JWT_SECRET))
 
     first = app()
+    tokens = first.post("/v1/auth/anonymous").json()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     sid = first.post("/v1/sessions", json={}, headers=headers).json()["session_id"]
     out = first.post(
         f"/v1/sessions/{sid}/messages", json={"text": "I want to kill myself"}, headers=headers
@@ -244,5 +256,16 @@ def test_state_survives_app_restart(db_url, crypto):
     second = app()  # simulates a restart: fresh process state, same database
     out = second.post(f"/v1/sessions/{sid}/messages", json={"text": "ok"}, headers=headers).json()
     assert out["risk_tier"] == 2  # sticky floor persisted
+    # Refresh token issued before the restart still works.
+    assert (
+        second.post("/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).status_code
+        == 200
+    )
     history = SqlSessionStore(make_session_factory(create_engine(db_url)), crypto).get(sid)
     assert [m.role for m in history.history] == ["user", "assistant", "user", "assistant"]
+
+
+def test_jwt_secret_required_with_database(db_url, crypto, monkeypatch):
+    monkeypatch.delenv("KOYALA_JWT_SECRET", raising=False)
+    with pytest.raises(RuntimeError):
+        create_app(stores=_sql_stores(db_url, crypto))
