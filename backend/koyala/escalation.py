@@ -144,6 +144,14 @@ class InMemoryEscalationStore:
             ]
         return max(open_, key=lambda e: e.created_at, default=None)
 
+    def export_user(self, user_id: str) -> list[Escalation]:
+        with self._lock:
+            return [e for e in self._items.values() if e.user_id == user_id]
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            self._items = {k: v for k, v in self._items.items() if v.user_id != user_id}
+
 
 class InvalidTransition(Exception):
     pass

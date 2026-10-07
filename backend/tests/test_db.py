@@ -23,6 +23,7 @@ from koyala.db.stores import (
     HISTORY_WINDOW,
     SqlAuthStore,
     SqlEscalationStore,
+    SqlPrivacyStore,
     SqlRiskStateStore,
     SqlSessionStore,
     SqlTrackingStore,
@@ -234,12 +235,15 @@ JWT_SECRET = "test-secret-" + "x" * 40
 
 def _sql_stores(db_url, crypto):
     factory = make_session_factory(create_engine(db_url))
+    tracking = SqlTrackingStore(factory, crypto)
+    escalations = SqlEscalationStore(factory, crypto)
     return Stores(
         SqlSessionStore(factory, crypto),
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
-        SqlTrackingStore(factory, crypto),
-        SqlEscalationStore(factory, crypto),
+        tracking,
+        escalations,
+        SqlPrivacyStore(factory, crypto, tracking, escalations),
         persistent=True,
     )
 

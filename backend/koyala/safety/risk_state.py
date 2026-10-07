@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -103,3 +103,12 @@ class InMemoryRiskStateStore:
         now = now or datetime.now(UTC)
         with self._lock:
             self._states.setdefault(user_id, RiskState()).apply_assessment_floor(tier, now)
+
+    def export_user(self, user_id: str) -> dict | None:
+        with self._lock:
+            state = self._states.get(user_id)
+        return asdict(state) if state else None
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            self._states.pop(user_id, None)

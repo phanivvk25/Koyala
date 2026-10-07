@@ -52,9 +52,13 @@ def current_user(
     if creds is None or creds.scheme.lower() != "bearer":
         raise _unauthorized("missing bearer token")
     try:
-        return auth.tokens.verify_access(creds.credentials)
+        user_id = auth.tokens.verify_access(creds.credentials)
     except InvalidToken:
         raise _unauthorized("invalid or expired token") from None
+    # Tokens of a deleted account stop working immediately, not after expiry.
+    if not auth.user_exists(user_id):
+        raise _unauthorized("account no longer exists")
+    return user_id
 
 
 CurrentUser = Annotated[str, Depends(current_user)]

@@ -112,3 +112,11 @@ class InMemoryTrackingStore:
             recs = self._records.get(user_id, [])
             self._records[user_id] = [(u, r) for u, r in recs if r.kind != kind]
         return self.add(user_id, kind, payload, now=now)
+
+    def export_user(self, user_id: str) -> list[Record]:
+        with self._lock:
+            return [r for _, r in self._records.get(user_id, [])]
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            self._records.pop(user_id, None)

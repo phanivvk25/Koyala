@@ -35,6 +35,7 @@ from koyala.db.models import (
 )
 from koyala.dialogue.llm import ChatMessage
 from koyala.escalation import OPEN_STATUSES, Channel, Escalation, Status
+from koyala.privacy import assemble
 from koyala.protocols.engine import ExerciseRun
 from koyala.safety.models import RiskCategory, RiskTier
 from koyala.safety.risk_state import RiskState
@@ -242,6 +243,10 @@ class SqlAuthStore:
         # Raised after the transaction commits so the family revocation sticks.
         assert reused
         raise RefreshTokenReused("refresh token reused; family revoked")
+
+    def user_exists(self, user_id: str) -> bool:
+        with self._factory() as db:
+            return db.get(User, user_id) is not None
 
     def revoke(self, raw: str) -> None:
         with self._factory.begin() as db:
@@ -471,3 +476,105 @@ def _write(row: RiskStateRow, state: RiskState) -> None:
     row.assessment_floor = int(state.assessment_floor)
     row.assessment_floor_at = state.assessment_floor_at
     row.follow_up_due = state.follow_up_due
+
+
+class SqlPrivacyStore:
+    """Export and erase everything stored for a user, across all tables."""
+
+    def __init__(
+        self,
+        factory: sessionmaker[DbSession],
+        crypto: Crypto,
+        tracking: SqlTrackingStore,
+        escalations: SqlEscalationStore,
+    ) -> None:
+        self._factory = factory
+        self._crypto = crypto
+        self._tracking = tracking
+        self._escalations = escalations
+
+    def export(self, user_id: str) -> dict[str, Any]:
+        with self._factory() as db:
+            user = db.get(User, user_id)
+            if user is None:
+                return assemble({"id": user_id}, [], [], None, [], [])
+
+            def dec(blob: bytes) -> str:
+                return self._crypto.decrypt(user.dek_wrapped, user_id, blob)
+
+            sessions = []
+            for cs in db.scalars(
+                select(ChatSession)
+                .where(ChatSession.user_id == user_id)
+                .order_by(ChatSession.created_at)
+            ):
+                msgs = db.scalars(
+                    select(Message).where(Message.session_id == cs.id).order_by(Message.seq)
+                )
+                sessions.append(
+                    {
+                        "id": cs.id,
+                        "language": cs.language,
+                        "created_at": _utc(cs.created_at).isoformat(),
+                        "messages": [
+                            {
+                                "role": m.role,
+                                "content": dec(m.content_enc),
+                                "created_at": _utc(m.created_at).isoformat(),
+                            }
+                            for m in msgs
+                        ],
+                    }
+                )
+            risk_row = db.get(RiskStateRow, user_id)
+            risk_events = [
+                {
+                    "tier": e.tier,
+                    "categories": e.categories,
+                    "created_at": _utc(e.created_at).isoformat(),
+                }
+                for e in db.scalars(
+                    select(RiskEvent)
+                    .where(RiskEvent.user_id == user_id)
+                    .order_by(RiskEvent.created_at)
+                )
+            ]
+            esc_rows = db.scalars(
+                select(EscalationRow)
+                .where(EscalationRow.user_id == user_id)
+                .order_by(EscalationRow.created_at)
+            ).all()
+            escalations = [self._escalations._to_escalation(r, user) for r in esc_rows]
+            user_info = {
+                "id": user.id,
+                "auth_type": user.auth_type,
+                "created_at": _utc(user.created_at).isoformat(),
+            }
+        records = [
+            r for kind in RecordKind for r in self._tracking.list(user_id, kind, limit=1_000_000)
+        ]
+        return assemble(
+            user_info,
+            sessions,
+            records,
+            asdict(_to_state(risk_row)) if risk_row else None,
+            risk_events,
+            escalations,
+        )
+
+    def delete(self, user_id: str) -> None:
+        # Explicit deletes in dependency order: correct even where the database
+        # does not enforce ON DELETE CASCADE (e.g. SQLite without the pragma).
+        with self._factory.begin() as db:
+            session_ids = select(ChatSession.id).where(ChatSession.user_id == user_id)
+            db.execute(delete(Message).where(Message.session_id.in_(session_ids)))
+            for model in (
+                ChatSession,
+                UserRecord,
+                RiskEvent,
+                RiskStateRow,
+                EscalationRow,
+                RefreshToken,
+            ):
+                db.execute(delete(model).where(model.user_id == user_id))
+            db.execute(delete(User).where(User.id == user_id))

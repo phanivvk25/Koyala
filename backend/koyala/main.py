@@ -20,6 +20,7 @@ from fastapi import FastAPI
 
 from koyala.api.auth_routes import router as auth_router
 from koyala.api.escalation_routes import router as escalation_router
+from koyala.api.privacy_routes import router as privacy_router
 from koyala.api.routes import router
 from koyala.api.tracking_routes import router as tracking_router
 from koyala.auth.refresh import AuthStore, InMemoryAuthStore
@@ -36,6 +37,7 @@ from koyala.escalation import (
     Pager,
     StubPartner,
 )
+from koyala.privacy import InMemoryPrivacyStore, PrivacyStore
 from koyala.safety.assessor import RiskAssessor, RiskClassifier
 from koyala.safety.risk_state import InMemoryRiskStateStore, RiskStateStore
 from koyala.store import InMemorySessionStore, SessionStore
@@ -51,6 +53,7 @@ class Stores:
     auth: AuthStore
     tracking: TrackingStore
     escalations: EscalationStore
+    privacy: PrivacyStore
     persistent: bool = False
 
 
@@ -68,19 +71,17 @@ def _default_llm() -> LLMProvider:
 def _default_stores() -> Stores:
     url = os.environ.get("KOYALA_DATABASE_URL")
     if not url:
-        return Stores(
-            InMemorySessionStore(),
-            InMemoryRiskStateStore(),
-            InMemoryAuthStore(),
-            InMemoryTrackingStore(),
-            InMemoryEscalationStore(),
-        )
+        sessions, risk, auth = InMemorySessionStore(), InMemoryRiskStateStore(), InMemoryAuthStore()
+        tracking, escalations = InMemoryTrackingStore(), InMemoryEscalationStore()
+        privacy = InMemoryPrivacyStore(sessions, risk, auth, tracking, escalations)
+        return Stores(sessions, risk, auth, tracking, escalations, privacy)
     from sqlalchemy import create_engine
 
     from koyala.db.crypto import Crypto
     from koyala.db.stores import (
         SqlAuthStore,
         SqlEscalationStore,
+        SqlPrivacyStore,
         SqlRiskStateStore,
         SqlSessionStore,
         SqlTrackingStore,
@@ -89,12 +90,15 @@ def _default_stores() -> Stores:
 
     crypto = Crypto.from_env()
     factory = make_session_factory(create_engine(url, pool_pre_ping=True))
+    tracking = SqlTrackingStore(factory, crypto)
+    escalations = SqlEscalationStore(factory, crypto)
     return Stores(
         SqlSessionStore(factory, crypto),
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
-        SqlTrackingStore(factory, crypto),
-        SqlEscalationStore(factory, crypto),
+        tracking,
+        escalations,
+        SqlPrivacyStore(factory, crypto, tracking, escalations),
         persistent=True,
     )
 
@@ -125,6 +129,7 @@ def create_app(
     app.state.risk_states = stores.risk_states
     app.state.sessions = stores.sessions
     app.state.tracking = stores.tracking
+    app.state.privacy = stores.privacy
     app.state.escalations = EscalationService(
         stores.escalations, partner or StubPartner(), pager or LogPager()
     )
@@ -137,6 +142,7 @@ def create_app(
     app.include_router(router)
     app.include_router(tracking_router)
     app.include_router(escalation_router)
+    app.include_router(privacy_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

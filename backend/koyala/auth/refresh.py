@@ -53,6 +53,8 @@ class AuthStore(Protocol):
         """Revoke the token's whole family (logout). Unknown tokens are ignored."""
         ...
 
+    def user_exists(self, user_id: str) -> bool: ...
+
 
 @dataclass
 class _Record:
@@ -112,3 +114,12 @@ class InMemoryAuthStore:
         for rec in self._tokens.values():
             if rec.family_id == family_id:
                 rec.revoked = True
+
+    def user_exists(self, user_id: str) -> bool:
+        with self._lock:
+            return user_id in self._users
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            self._users.discard(user_id)
+            self._tokens = {h: r for h, r in self._tokens.items() if r.user_id != user_id}
