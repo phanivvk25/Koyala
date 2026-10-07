@@ -26,6 +26,25 @@ Python/FastAPI implementation of the safety-critical core described in
 - Every LLM reply passes the output guard (diagnosis, dosage, human claims, URLs, unapproved numbers); regenerate once, then safe fallback.
 - LLM outage → fallback template with helplines.
 
+## Risk evaluation
+
+```bash
+python -m koyala.evals.risk_eval            # markdown report on the starter set
+python -m koyala.evals.risk_eval my.jsonl   # any labelled set (see evals/data/README.md)
+python -m koyala.evals.risk_eval --enforce-gates   # exit 1 unless release gates pass
+```
+
+Reports high-risk recall (gate ≥ 95%), imminent miss rate (gate ≤ 1%), false
+alarms, per-language and per-style recall, the confusion matrix and every missed
+message. CI writes the report to the job summary.
+
+**Current result on the synthetic starter set: the lexicon fails every release
+gate** (≈ 52% high-risk recall; 64% of imminent messages missed; 0% of coded
+phrasing such as "kms"). The starter set was written by engineering and is not a
+clinical measure — a clinician-labelled golden set and a trained classifier (C4)
+are required before launch. `tests/test_risk_eval.py` pins today's numbers as a
+no-regression floor.
+
 ## Authentication
 
 ```

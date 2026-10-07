@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 include = ["koyala*"]
 
 [tool.setuptools.package-data]
-koyala = ["content/*.yaml", "content/exercises/*.yaml", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
+koyala = ["evals/data/*.jsonl", "content/*.yaml", "content/exercises/*.yaml", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
