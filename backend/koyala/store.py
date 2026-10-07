@@ -55,3 +55,19 @@ class InMemorySessionStore:
 
     def save(self, session: Session) -> None:
         session.persisted = len(session.history)
+
+    def export_user(self, user_id: str) -> list[dict]:
+        with self._lock:
+            sessions = [s for s in self._sessions.values() if s.user_id == user_id]
+        return [
+            {
+                "id": s.id,
+                "language": s.language,
+                "messages": [{"role": m.role, "content": m.content} for m in s.history],
+            }
+            for s in sessions
+        ]
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            self._sessions = {k: v for k, v in self._sessions.items() if v.user_id != user_id}

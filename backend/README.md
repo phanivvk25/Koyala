@@ -26,6 +26,20 @@ Python/FastAPI implementation of the safety-critical core described in
 - Every LLM reply passes the output guard (diagnosis, dosage, human claims, URLs, unapproved numbers); regenerate once, then safe fallback.
 - LLM outage → fallback template with helplines.
 
+## Privacy: export and deletion
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/privacy/export` | Everything stored about the user, decrypted, as a JSON download (`no-store`) |
+| `POST /v1/privacy/delete-account {"confirm": "DELETE"}` | Erase the account and all its data immediately |
+
+- Export covers chat history, assessments, mood logs, journal (incl. private),
+  safety plan, risk state, risk events and counsellor requests.
+- Deletion removes every row for the user across all tables in one transaction;
+  the user's access and refresh tokens stop working at once.
+- **Legal to confirm:** TDD §12 proposed keeping risk events and audit logs for
+  7 years; deletion currently removes them too.
+
 ## Risk evaluation
 
 ```bash
@@ -135,7 +149,7 @@ export KOYALA_LLM_EFFORT=medium           # optional: low | medium | high
 ## Not yet production-ready
 
 - **Auth**: anonymous accounts only; phone/email sign-in and sign-up rate limiting still to do.
-- **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Data export/deletion endpoints are not built yet.
+- **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Backups still hold deleted data until they roll off (TDD §12: ≤ 35 days).
 - **LLM**: Claude provider available; redaction does not yet cover person/place names (needs NER).
 - **Risk classifier (C4)**: interface only; lexicon is a placeholder needing clinical/linguistic review.
 - **Content**: all crisis text, helplines and exercises must be clinically approved and verified.

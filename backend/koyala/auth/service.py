@@ -34,6 +34,9 @@ class AuthService:
             raise
         return self._pair(user_id, new_refresh)
 
+    def user_exists(self, user_id: str) -> bool:
+        return self._store.user_exists(user_id)
+
     def logout(self, refresh_token: str) -> None:
         self._store.revoke(refresh_token)
 
