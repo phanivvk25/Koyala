@@ -74,6 +74,7 @@ uvicorn koyala.main:app --reload
 | `risk_states` | Sticky risk floor, PHQ-9 floor, follow-up due time |
 | `risk_events` | Audit trail of tier ≥ 2 turns (tier + categories, no content) |
 | `refresh_tokens` | Hashed refresh tokens, families, expiry/use/revocation |
+| `escalations` | Counsellor handoff requests, status, SLA (callback number **encrypted**) |
 | `user_records` | Assessments, mood logs, journal, safety plan (**encrypted** payload) |
 
 Schema changes: edit `koyala/db/models.py`, then

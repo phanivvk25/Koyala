@@ -22,6 +22,7 @@ from koyala.db.models import Base, ChatSession, Message, RiskEvent
 from koyala.db.stores import (
     HISTORY_WINDOW,
     SqlAuthStore,
+    SqlEscalationStore,
     SqlRiskStateStore,
     SqlSessionStore,
     SqlTrackingStore,
@@ -238,6 +239,7 @@ def _sql_stores(db_url, crypto):
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
         SqlTrackingStore(factory, crypto),
+        SqlEscalationStore(factory, crypto),
         persistent=True,
     )
 
