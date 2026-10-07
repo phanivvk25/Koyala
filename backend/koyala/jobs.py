@@ -21,10 +21,22 @@ def sweep_escalations() -> int:
     return 0
 
 
+def send_follow_ups() -> int:
+    from koyala.followups import FollowUpService, LogNotifier
+    from koyala.main import _default_stores
+
+    stores = _default_stores()
+    result = FollowUpService(stores.risk_states, stores.tracking, LogNotifier(), LogPager()).run()
+    print(f"{result.sent} follow-up(s) sent, {result.paged} unanswered high-risk check-in(s) paged")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO)
     if argv[1:] == ["sweep-escalations"]:
         return sweep_escalations()
+    if argv[1:] == ["send-follow-ups"]:
+        return send_follow_ups()
     print(__doc__)
     return 2
 

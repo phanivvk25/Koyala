@@ -19,6 +19,7 @@ class RecordKind(StrEnum):
     MOOD = "mood"
     JOURNAL = "journal"
     SAFETY_PLAN = "safety_plan"
+    CHECK_IN = "check_in"
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,18 @@ class TrackingStore(Protocol):
         self, user_id: str, kind: RecordKind, payload: dict[str, Any], now: datetime | None = None
     ) -> Record:
         """Replace the user's only record of this kind (e.g. the safety plan)."""
+        ...
+
+    def update(
+        self, user_id: str, kind: RecordKind, record_id: str, payload: dict[str, Any]
+    ) -> Record | None:
+        """Replace a record's payload; None if it doesn't exist for this user."""
+        ...
+
+    def list_window(
+        self, kind: RecordKind, start: datetime, end: datetime, limit: int = 1000
+    ) -> list[tuple[str, Record]]:
+        """(user_id, record) for all users' records created in [start, end)."""
         ...
 
 
@@ -112,6 +125,31 @@ class InMemoryTrackingStore:
             recs = self._records.get(user_id, [])
             self._records[user_id] = [(u, r) for u, r in recs if r.kind != kind]
         return self.add(user_id, kind, payload, now=now)
+
+    def update(
+        self, user_id: str, kind: RecordKind, record_id: str, payload: dict[str, Any]
+    ) -> Record | None:
+        with self._lock:
+            recs = self._records.get(user_id, [])
+            for i, (u, r) in enumerate(recs):
+                if r.kind == kind and r.id == record_id:
+                    new = replace(r, payload=dict(payload))
+                    recs[i] = (u, new)
+                    return new
+        return None
+
+    def list_window(
+        self, kind: RecordKind, start: datetime, end: datetime, limit: int = 1000
+    ) -> list[tuple[str, Record]]:
+        with self._lock:
+            out = [
+                (u, r)
+                for recs in self._records.values()
+                for u, r in recs
+                if r.kind == kind and start <= r.created_at < end
+            ]
+        out.sort(key=lambda item: item[1].created_at)
+        return out[:limit]
 
     def export_user(self, user_id: str) -> list[Record]:
         with self._lock:

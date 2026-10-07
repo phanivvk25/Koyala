@@ -72,6 +72,14 @@ class RiskStateStore(Protocol):
         self, user_id: str, tier: RiskTier, now: datetime | None = None
     ) -> None: ...
 
+    def due_follow_ups(self, now: datetime, limit: int = 500) -> list[tuple[str, RiskState]]:
+        """Users whose follow-up check-in is due, oldest first."""
+        ...
+
+    def clear_follow_up(self, user_id: str, due: datetime) -> None:
+        """Mark the follow-up due at `due` as sent (a newer schedule is left alone)."""
+        ...
+
 
 class InMemoryRiskStateStore:
     """For tests and local development; state is lost on restart."""
@@ -103,6 +111,22 @@ class InMemoryRiskStateStore:
         now = now or datetime.now(UTC)
         with self._lock:
             self._states.setdefault(user_id, RiskState()).apply_assessment_floor(tier, now)
+
+    def due_follow_ups(self, now: datetime, limit: int = 500) -> list[tuple[str, RiskState]]:
+        with self._lock:
+            due = [
+                (uid, replace(st))
+                for uid, st in self._states.items()
+                if st.follow_up_due is not None and st.follow_up_due <= now
+            ]
+        due.sort(key=lambda item: item[1].follow_up_due)
+        return due[:limit]
+
+    def clear_follow_up(self, user_id: str, due: datetime) -> None:
+        with self._lock:
+            st = self._states.get(user_id)
+            if st is not None and st.follow_up_due == due:
+                st.follow_up_due = None
 
     def export_user(self, user_id: str) -> dict | None:
         with self._lock:

@@ -138,3 +138,13 @@ def inline_resource_actions(lang: str = DEFAULT_LANG) -> tuple[Action, ...]:
         Action(kind="call", label=f"{r.label} {r.number}", number=r.number),
         Action(kind="safety_plan", label="Open my safety plan"),
     )
+
+
+def follow_up_message(tier: int, lang: str = DEFAULT_LANG) -> CrisisResponse:
+    """Check-in text after elevated risk (tier 2 vs tier >= 3)."""
+    t = _template("followup_t3" if tier >= RiskTier.HIGH else "followup_t2")
+    return CrisisResponse(
+        template_id=f"{t['id']}_v{t['version']}_{lang}",
+        text=_pick(t["text"], lang),
+        actions=_actions(t, lang),
+    )
