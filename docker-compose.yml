@@ -1,0 +1,24 @@
+# Local development database. Production uses a managed PostgreSQL in an
+# India cloud region with encryption at rest (docs/04-TDD §3, docs/07 §8).
+#
+#   docker compose up -d db
+#   cp backend/.env.example backend/.env   # then fill in KOYALA_MASTER_KEY
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: koyala
+      POSTGRES_PASSWORD: koyala-dev-only
+      POSTGRES_DB: koyala
+    ports:
+      - "5432:5432"
+    volumes:
+      - koyala-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koyala -d koyala"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  koyala-db:

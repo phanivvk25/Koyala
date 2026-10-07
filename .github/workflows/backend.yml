@@ -9,6 +9,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: koyala
+          POSTGRES_PASSWORD: koyala
+          POSTGRES_DB: koyala_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U koyala -d koyala_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      KOYALA_TEST_DATABASE_URL: postgresql+psycopg://koyala:koyala@localhost:5432/koyala_test
     defaults:
       run:
         working-directory: backend
