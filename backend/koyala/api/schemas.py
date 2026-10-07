@@ -59,6 +59,7 @@ class AssessmentRequest(BaseModel):
 
 
 class AssessmentOut(BaseModel):
+    id: str
     instrument: Instrument
     total: int
     band: str

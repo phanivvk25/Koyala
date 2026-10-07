@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -96,3 +97,21 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UserRecord(Base):
+    """Assessments, mood logs, journal entries and safety plans (koyala.tracking).
+
+    Everything the user wrote or answered is in payload_enc; only the kind,
+    timestamp and private flag are stored in the clear, for querying.
+    """
+
+    __tablename__ = "user_records"
+    __table_args__ = (Index("ix_user_records_user_kind_created", "user_id", "kind", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    private: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload_enc: Mapped[bytes] = mapped_column(LargeBinary)

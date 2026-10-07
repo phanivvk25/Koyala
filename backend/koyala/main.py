@@ -20,6 +20,7 @@ from fastapi import FastAPI
 
 from koyala.api.auth_routes import router as auth_router
 from koyala.api.routes import router
+from koyala.api.tracking_routes import router as tracking_router
 from koyala.auth.refresh import AuthStore, InMemoryAuthStore
 from koyala.auth.service import AuthService
 from koyala.auth.tokens import TokenService
@@ -28,6 +29,7 @@ from koyala.dialogue.orchestrator import Orchestrator
 from koyala.safety.assessor import RiskAssessor, RiskClassifier
 from koyala.safety.risk_state import InMemoryRiskStateStore, RiskStateStore
 from koyala.store import InMemorySessionStore, SessionStore
+from koyala.tracking import InMemoryTrackingStore, TrackingStore
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ class Stores:
     sessions: SessionStore
     risk_states: RiskStateStore
     auth: AuthStore
+    tracking: TrackingStore
     persistent: bool = False
 
 
@@ -54,7 +57,12 @@ def _default_llm() -> LLMProvider:
 def _default_stores() -> Stores:
     url = os.environ.get("KOYALA_DATABASE_URL")
     if not url:
-        return Stores(InMemorySessionStore(), InMemoryRiskStateStore(), InMemoryAuthStore())
+        return Stores(
+            InMemorySessionStore(),
+            InMemoryRiskStateStore(),
+            InMemoryAuthStore(),
+            InMemoryTrackingStore(),
+        )
     from sqlalchemy import create_engine
 
     from koyala.db.crypto import Crypto
@@ -62,6 +70,7 @@ def _default_stores() -> Stores:
         SqlAuthStore,
         SqlRiskStateStore,
         SqlSessionStore,
+        SqlTrackingStore,
         make_session_factory,
     )
 
@@ -71,6 +80,7 @@ def _default_stores() -> Stores:
         SqlSessionStore(factory, crypto),
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
+        SqlTrackingStore(factory, crypto),
         persistent=True,
     )
 
@@ -98,12 +108,15 @@ def create_app(
     app.state.auth = AuthService(tokens, stores.auth)
     app.state.risk_states = stores.risk_states
     app.state.sessions = stores.sessions
+    app.state.tracking = stores.tracking
+    app.state.assessor = RiskAssessor(stores.risk_states, classifier)
     app.state.orchestrator = Orchestrator(
-        assessor=RiskAssessor(stores.risk_states, classifier),
+        assessor=app.state.assessor,
         llm=llm or _default_llm(),
     )
     app.include_router(auth_router)
     app.include_router(router)
+    app.include_router(tracking_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

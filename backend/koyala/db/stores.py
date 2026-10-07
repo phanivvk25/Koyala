@@ -7,8 +7,9 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
@@ -22,12 +23,21 @@ from koyala.auth.refresh import (
     new_user_id,
 )
 from koyala.db.crypto import Crypto
-from koyala.db.models import ChatSession, Message, RefreshToken, RiskEvent, RiskStateRow, User
+from koyala.db.models import (
+    ChatSession,
+    Message,
+    RefreshToken,
+    RiskEvent,
+    RiskStateRow,
+    User,
+    UserRecord,
+)
 from koyala.dialogue.llm import ChatMessage
 from koyala.protocols.engine import ExerciseRun
 from koyala.safety.models import RiskCategory, RiskTier
 from koyala.safety.risk_state import RiskState
 from koyala.store import Session
+from koyala.tracking import Record, RecordKind
 
 # Messages loaded into a session's working history (the orchestrator uses fewer).
 HISTORY_WINDOW = 50
@@ -258,6 +268,104 @@ class SqlAuthStore:
             .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
+
+
+class SqlTrackingStore:
+    def __init__(self, factory: sessionmaker[DbSession], crypto: Crypto) -> None:
+        self._factory = factory
+        self._crypto = crypto
+
+    def add(
+        self,
+        user_id: str,
+        kind: RecordKind,
+        payload: dict[str, Any],
+        private: bool = False,
+        now: datetime | None = None,
+    ) -> Record:
+        now = now or datetime.now(UTC)
+        with self._factory.begin() as db:
+            return self._insert(db, user_id, kind, payload, private, now)
+
+    def list(
+        self,
+        user_id: str,
+        kind: RecordKind,
+        since: datetime | None = None,
+        limit: int = 100,
+    ) -> list[Record]:
+        with self._factory() as db:
+            user = db.get(User, user_id)
+            if user is None:
+                return []
+            query = select(UserRecord).where(
+                UserRecord.user_id == user_id, UserRecord.kind == str(kind)
+            )
+            if since is not None:
+                query = query.where(UserRecord.created_at >= since)
+            rows = db.scalars(query.order_by(UserRecord.created_at.desc()).limit(limit)).all()
+        return [
+            Record(
+                id=row.id,
+                kind=RecordKind(row.kind),
+                created_at=_utc(row.created_at),
+                payload=json.loads(
+                    self._crypto.decrypt(user.dek_wrapped, user_id, row.payload_enc)
+                ),
+                private=row.private,
+            )
+            for row in rows
+        ]
+
+    def delete(self, user_id: str, kind: RecordKind, record_id: str) -> bool:
+        with self._factory.begin() as db:
+            result = db.execute(
+                delete(UserRecord).where(
+                    UserRecord.id == record_id,
+                    UserRecord.user_id == user_id,
+                    UserRecord.kind == str(kind),
+                )
+            )
+        return result.rowcount > 0
+
+    def put_single(
+        self, user_id: str, kind: RecordKind, payload: dict[str, Any], now: datetime | None = None
+    ) -> Record:
+        now = now or datetime.now(UTC)
+        with self._factory.begin() as db:
+            db.execute(
+                delete(UserRecord).where(
+                    UserRecord.user_id == user_id, UserRecord.kind == str(kind)
+                )
+            )
+            return self._insert(db, user_id, kind, payload, False, now)
+
+    def _insert(
+        self,
+        db: DbSession,
+        user_id: str,
+        kind: RecordKind,
+        payload: dict[str, Any],
+        private: bool,
+        now: datetime,
+    ) -> Record:
+        user = _ensure_user(db, self._crypto, user_id)
+        rec = Record(
+            id=uuid.uuid4().hex, kind=kind, created_at=now, payload=dict(payload), private=private
+        )
+        db.add(
+            UserRecord(
+                id=rec.id,
+                user_id=user_id,
+                kind=str(kind),
+                created_at=now,
+                private=private,
+                payload_enc=self._crypto.encrypt(
+                    user.dek_wrapped, user_id, json.dumps(payload, ensure_ascii=False)
+                ),
+            )
+        )
+        return rec
 
 
 def _to_state(row: RiskStateRow) -> RiskState:

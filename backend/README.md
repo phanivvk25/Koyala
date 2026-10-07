@@ -92,6 +92,8 @@ uvicorn koyala.main:app --reload
 | `messages` | Conversation history (**encrypted**, AES-256-GCM, bound to the user) |
 | `risk_states` | Sticky risk floor, PHQ-9 floor, follow-up due time |
 | `risk_events` | Audit trail of tier ≥ 2 turns (tier + categories, no content) |
+| `refresh_tokens` | Hashed refresh tokens, families, expiry/use/revocation |
+| `user_records` | Assessments, mood logs, journal, safety plan (**encrypted** payload) |
 
 Schema changes: edit `koyala/db/models.py`, then
 `alembic revision --autogenerate -m "..."` and review the generated file.
@@ -116,7 +118,7 @@ export KOYALA_LLM_EFFORT=medium           # optional: low | medium | high
 ## Not yet production-ready
 
 - **Auth**: anonymous accounts only; phone/email sign-in and sign-up rate limiting still to do.
-- **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Assessments, mood logs, journal and safety plans are not stored yet.
+- **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Data export/deletion endpoints are not built yet.
 - **LLM**: Claude provider available; redaction does not yet cover person/place names (needs NER).
 - **Risk classifier (C4)**: interface only; lexicon is a placeholder needing clinical/linguistic review.
 - **Content**: all crisis text, helplines and exercises must be clinically approved and verified.
