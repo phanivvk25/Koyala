@@ -34,10 +34,25 @@ pytest -q
 uvicorn koyala.main:app --reload   # needs: pip install uvicorn
 ```
 
+### Using Claude as the model
+
+```bash
+export KOYALA_LLM_PROVIDER=anthropic     # default is "stub" (offline)
+export ANTHROPIC_API_KEY=...              # or an `ant auth login` profile
+export KOYALA_LLM_MODEL=claude-opus-5-5   # optional (default)
+export KOYALA_LLM_EFFORT=medium           # optional: low | medium | high
+```
+
+- Text is PII-redacted (emails, phones, URLs, Aadhaar/PAN-like IDs) before it is sent.
+- Server-side refusal fallback (`fallbacks: "default"`) is enabled.
+- Any API error, timeout, refusal or empty reply → safe fallback template with helplines.
+- Before production: confirm data-retention terms with Anthropic and data-transfer
+  compliance under DPDP (docs/07 §7).
+
 ## Not yet production-ready
 
 - **Auth**: callers pass `X-User-Id`; replace with real auth before any deployment.
 - **Storage**: in-memory; move to PostgreSQL with encrypted content columns.
-- **LLM**: `StubProvider` only; a real provider (zero-retention, PII-redacted) is next.
+- **LLM**: Claude provider available; redaction does not yet cover person/place names (needs NER).
 - **Risk classifier (C4)**: interface only; lexicon is a placeholder needing clinical/linguistic review.
 - **Content**: all crisis text, helplines and exercises must be clinically approved and verified.
