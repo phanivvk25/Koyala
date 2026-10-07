@@ -24,6 +24,7 @@ from koyala.db.stores import (
     SqlAuthStore,
     SqlRiskStateStore,
     SqlSessionStore,
+    SqlTrackingStore,
     make_session_factory,
 )
 from koyala.dialogue.llm import ChatMessage
@@ -236,6 +237,7 @@ def _sql_stores(db_url, crypto):
         SqlSessionStore(factory, crypto),
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
+        SqlTrackingStore(factory, crypto),
         persistent=True,
     )
 

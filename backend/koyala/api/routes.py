@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from koyala.api import schemas
 from koyala.api.auth_routes import CurrentUser
+from koyala.api.tracking_routes import assessment_payload
 from koyala.assessments import scoring
 from koyala.dialogue.orchestrator import Orchestrator, TurnResult
 from koyala.protocols import engine
@@ -15,6 +16,7 @@ from koyala.safety import crisis
 from koyala.safety.models import RiskTier
 from koyala.safety.risk_state import RiskStateStore
 from koyala.store import Session, SessionStore
+from koyala.tracking import RecordKind, TrackingStore
 
 router = APIRouter(prefix="/v1")
 
@@ -35,6 +37,10 @@ def _sessions(request: Request) -> SessionStore:
 
 def _risk_states(request: Request) -> RiskStateStore:
     return request.app.state.risk_states
+
+
+def _tracking(request: Request) -> TrackingStore:
+    return request.app.state.tracking
 
 
 def _owned_session(session_id: str, user_id: str, sessions: SessionStore) -> Session:
@@ -128,11 +134,13 @@ def submit_assessment(
     body: schemas.AssessmentRequest,
     user_id: CurrentUser,
     risk_states: Annotated[RiskStateStore, Depends(_risk_states)],
+    tracking: Annotated[TrackingStore, Depends(_tracking)],
 ) -> schemas.AssessmentOut:
     try:
         result = scoring.score(body.instrument, body.item_scores)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
+    rec = tracking.add(user_id, RecordKind.ASSESSMENT, assessment_payload(result, body.item_scores))
 
     follow_up = None
     if result.self_harm_flag:
@@ -145,6 +153,7 @@ def submit_assessment(
             actions=[schemas.ActionOut(**a.__dict__) for a in crisis.inline_resource_actions()],
         )
     return schemas.AssessmentOut(
+        id=rec.id,
         instrument=result.instrument,
         total=result.total,
         band=result.band,
