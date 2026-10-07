@@ -26,6 +26,20 @@ Python/FastAPI implementation of the safety-critical core described in
 - Every LLM reply passes the output guard (diagnosis, dosage, human claims, URLs, unapproved numbers); regenerate once, then safe fallback.
 - LLM outage → fallback template with helplines.
 
+## Follow-up check-ins
+
+`python -m koyala.jobs send-follow-ups` (run every 5 minutes):
+
+- Sends a check-in to each user whose follow-up is due: 24 h after a tier-2 turn,
+  12 h after tier ≥ 3 (Safety Protocol §9). The check-in is an in-app message
+  (`GET /v1/check-ins`, `POST /v1/check-ins/{id}/ack`) plus a push notification
+  whose text never mentions risk ("Checking in on you").
+- A tier ≥ 3 check-in still unanswered after 24 h pages on-call once.
+- Check-in wording lives in `content/crisis_templates.yaml` (`followup_t2`,
+  `followup_t3`) — placeholder, needs clinical approval.
+- `LogNotifier` is a placeholder until FCM/APNs push is set up. Not yet built:
+  the protocol's daily repeat for 3 days after tier ≥ 3.
+
 ## Privacy: export and deletion
 
 | Endpoint | Purpose |
@@ -33,7 +47,7 @@ Python/FastAPI implementation of the safety-critical core described in
 | `GET /v1/privacy/export` | Everything stored about the user, decrypted, as a JSON download (`no-store`) |
 | `POST /v1/privacy/delete-account {"confirm": "DELETE"}` | Erase the account and all its data immediately |
 
-- Export covers chat history, assessments, mood logs, journal (incl. private),
+- Export covers chat history, check-ins, assessments, mood logs, journal (incl. private),
   safety plan, risk state, risk events and counsellor requests.
 - Deletion removes every row for the user across all tables in one transaction;
   the user's access and refresh tokens stop working at once.

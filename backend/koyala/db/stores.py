@@ -188,6 +188,24 @@ class SqlRiskStateStore:
             state.apply_assessment_floor(tier, now)
             _write(row, state)
 
+    def due_follow_ups(self, now: datetime, limit: int = 500) -> list[tuple[str, RiskState]]:
+        with self._factory() as db:
+            rows = db.scalars(
+                select(RiskStateRow)
+                .where(RiskStateRow.follow_up_due <= now)
+                .order_by(RiskStateRow.follow_up_due)
+                .limit(limit)
+            ).all()
+            return [(r.user_id, _to_state(r)) for r in rows]
+
+    def clear_follow_up(self, user_id: str, due: datetime) -> None:
+        with self._factory.begin() as db:
+            db.execute(
+                update(RiskStateRow)
+                .where(RiskStateRow.user_id == user_id, RiskStateRow.follow_up_due == due)
+                .values(follow_up_due=None)
+            )
+
     def _locked_row(self, db: DbSession, user_id: str) -> RiskStateRow:
         """Fetch the user's row with a row lock, creating it if needed."""
         query = select(RiskStateRow).where(RiskStateRow.user_id == user_id).with_for_update()
@@ -346,6 +364,67 @@ class SqlTrackingStore:
                 )
             )
             return self._insert(db, user_id, kind, payload, False, now)
+
+    def update(
+        self, user_id: str, kind: RecordKind, record_id: str, payload: dict[str, Any]
+    ) -> Record | None:
+        with self._factory.begin() as db:
+            row = db.scalars(
+                select(UserRecord)
+                .where(
+                    UserRecord.id == record_id,
+                    UserRecord.user_id == user_id,
+                    UserRecord.kind == str(kind),
+                )
+                .with_for_update()
+            ).one_or_none()
+            user = db.get(User, user_id)
+            if row is None or user is None:
+                return None
+            row.payload_enc = self._crypto.encrypt(
+                user.dek_wrapped, user_id, json.dumps(payload, ensure_ascii=False)
+            )
+            return Record(
+                id=row.id,
+                kind=kind,
+                created_at=_utc(row.created_at),
+                payload=dict(payload),
+                private=row.private,
+            )
+
+    def list_window(
+        self, kind: RecordKind, start: datetime, end: datetime, limit: int = 1000
+    ) -> list[tuple[str, Record]]:
+        with self._factory() as db:
+            rows = db.scalars(
+                select(UserRecord)
+                .where(
+                    UserRecord.kind == str(kind),
+                    UserRecord.created_at >= start,
+                    UserRecord.created_at < end,
+                )
+                .order_by(UserRecord.created_at)
+                .limit(limit)
+            ).all()
+            keys = {
+                u.id: u.dek_wrapped
+                for u in db.scalars(select(User).where(User.id.in_({r.user_id for r in rows})))
+            }
+        return [
+            (
+                r.user_id,
+                Record(
+                    id=r.id,
+                    kind=kind,
+                    created_at=_utc(r.created_at),
+                    payload=json.loads(
+                        self._crypto.decrypt(keys[r.user_id], r.user_id, r.payload_enc)
+                    ),
+                    private=r.private,
+                ),
+            )
+            for r in rows
+        ]
 
     def _insert(
         self,

@@ -80,6 +80,7 @@ def assemble(
         "mood_logs": [record_json(r) for r in by_kind[RecordKind.MOOD]],
         "journal": [record_json(r) for r in by_kind[RecordKind.JOURNAL]],
         "safety_plan": record_json(plans[-1]) if plans else None,
+        "check_ins": [record_json(r) for r in by_kind[RecordKind.CHECK_IN]],
         "risk_state": risk_state_json(risk_state),
         "risk_events": risk_events,
         "escalations": [escalation_json(e) for e in escalations],

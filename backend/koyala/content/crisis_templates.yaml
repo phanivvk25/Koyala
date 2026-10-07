@@ -55,3 +55,26 @@ templates:
         exercises while I get back on my feet.
     resources: [tele_manas]
     actions: [call, exercises]
+
+  # Follow-up check-ins after elevated risk (Clinical Safety Protocol §9).
+  - id: followup_t2
+    version: 1
+    tier: 2
+    approved: false
+    text:
+      en: >-
+        I've been thinking about our conversation. How are you feeling today?
+        I'm here if you'd like to talk, and your safety plan is always one tap away.
+    resources: [tele_manas]
+    actions: [call, safety_plan]
+
+  - id: followup_t3
+    version: 1
+    tier: 3
+    approved: false
+    text:
+      en: >-
+        I wanted to check in on you after what you shared. How are you doing right
+        now? If things feel heavy again, you can talk to a counsellor any time.
+    resources: [tele_manas, emergency]
+    actions: [call, handoff, safety_plan]

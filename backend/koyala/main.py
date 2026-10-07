@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from koyala.api.auth_routes import router as auth_router
+from koyala.api.checkin_routes import router as checkin_router
 from koyala.api.escalation_routes import router as escalation_router
 from koyala.api.privacy_routes import router as privacy_router
 from koyala.api.routes import router
@@ -157,6 +158,7 @@ def create_app(
     app.include_router(tracking_router)
     app.include_router(escalation_router)
     app.include_router(privacy_router)
+    app.include_router(checkin_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
