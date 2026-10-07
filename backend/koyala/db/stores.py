@@ -25,6 +25,7 @@ from koyala.auth.refresh import (
 from koyala.db.crypto import Crypto
 from koyala.db.models import (
     ChatSession,
+    EscalationRow,
     Message,
     RefreshToken,
     RiskEvent,
@@ -33,6 +34,7 @@ from koyala.db.models import (
     UserRecord,
 )
 from koyala.dialogue.llm import ChatMessage
+from koyala.escalation import OPEN_STATUSES, Channel, Escalation, Status
 from koyala.protocols.engine import ExerciseRun
 from koyala.safety.models import RiskCategory, RiskTier
 from koyala.safety.risk_state import RiskState
@@ -366,6 +368,91 @@ class SqlTrackingStore:
             )
         )
         return rec
+
+
+class SqlEscalationStore:
+    def __init__(self, factory: sessionmaker[DbSession], crypto: Crypto) -> None:
+        self._factory = factory
+        self._crypto = crypto
+
+    def save(self, escalation: Escalation) -> None:
+        e = escalation
+        with self._factory.begin() as db:
+            user = _ensure_user(db, self._crypto, e.user_id)
+            number_enc = (
+                self._crypto.encrypt(user.dek_wrapped, e.user_id, e.callback_number)
+                if e.callback_number
+                else None
+            )
+            db.merge(
+                EscalationRow(
+                    id=e.id,
+                    user_id=e.user_id,
+                    channel=str(e.channel),
+                    risk_tier=e.risk_tier,
+                    categories=list(e.categories),
+                    language=e.language,
+                    status=str(e.status),
+                    created_at=e.created_at,
+                    callback_number_enc=number_enc,
+                    partner_ref=e.partner_ref,
+                    connected_at=e.connected_at,
+                    closed_at=e.closed_at,
+                    sla_breached=e.sla_breached,
+                )
+            )
+
+    def get(self, escalation_id: str) -> Escalation | None:
+        with self._factory() as db:
+            row = db.get(EscalationRow, escalation_id)
+            if row is None:
+                return None
+            user = db.get(User, row.user_id)
+            return self._to_escalation(row, user)
+
+    def open_before(self, cutoff: datetime) -> list[Escalation]:
+        with self._factory() as db:
+            rows = db.scalars(
+                select(EscalationRow).where(
+                    EscalationRow.status.in_([str(s) for s in OPEN_STATUSES]),
+                    EscalationRow.created_at < cutoff,
+                    EscalationRow.sla_breached.is_(False),
+                )
+            ).all()
+            return [self._to_escalation(r, db.get(User, r.user_id)) for r in rows]
+
+    def open_for_user(self, user_id: str) -> Escalation | None:
+        with self._factory() as db:
+            row = db.scalars(
+                select(EscalationRow)
+                .where(
+                    EscalationRow.user_id == user_id,
+                    EscalationRow.status.in_([str(s) for s in OPEN_STATUSES]),
+                )
+                .order_by(EscalationRow.created_at.desc())
+                .limit(1)
+            ).one_or_none()
+            return self._to_escalation(row, db.get(User, user_id)) if row else None
+
+    def _to_escalation(self, row: EscalationRow, user: User | None) -> Escalation:
+        number = None
+        if row.callback_number_enc is not None and user is not None:
+            number = self._crypto.decrypt(user.dek_wrapped, row.user_id, row.callback_number_enc)
+        return Escalation(
+            id=row.id,
+            user_id=row.user_id,
+            channel=Channel(row.channel),
+            risk_tier=row.risk_tier,
+            categories=tuple(row.categories),
+            language=row.language,
+            status=Status(row.status),
+            created_at=_utc(row.created_at),
+            callback_number=number,
+            partner_ref=row.partner_ref,
+            connected_at=_utc(row.connected_at),
+            closed_at=_utc(row.closed_at),
+            sla_breached=row.sla_breached,
+        )
 
 
 def _to_state(row: RiskStateRow) -> RiskState:
