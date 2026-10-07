@@ -17,6 +17,7 @@ from enum import StrEnum
 from koyala.dialogue import guard, intent
 from koyala.dialogue.llm import ChatMessage, LLMProvider
 from koyala.dialogue.prompts import PROMPT_VERSION, Action, build_system_prompt
+from koyala.dialogue.redact import redact
 from koyala.protocols import engine
 from koyala.safety import crisis
 from koyala.safety.assessor import RiskAssessor
@@ -127,7 +128,11 @@ class Orchestrator:
 
     def _generate(self, session: Session, action: Action, tier: RiskTier) -> TurnResult:
         system = build_system_prompt(action, language=session.language)
-        messages = session.history[-(CONTEXT_TURNS * 2) :]
+        # Only redacted text leaves Koyala for the external model.
+        messages = [
+            ChatMessage(role=m.role, content=redact(m.content))
+            for m in session.history[-(CONTEXT_TURNS * 2) :]
+        ]
         violations: tuple[str, ...] = ()
         for attempt in range(2):
             prompt = system if attempt == 0 else system + STRICT_RETRY_SUFFIX
