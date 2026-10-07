@@ -8,6 +8,10 @@ dependencies = [
   "pydantic>=2.5",
   "pyyaml>=6.0",
   "anthropic>=1.11",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.1",
+  "alembic>=1.13",
+  "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -21,7 +25,7 @@ build-backend = "setuptools.build_meta"
 include = ["koyala*"]
 
 [tool.setuptools.package-data]
-koyala = ["content/*.yaml", "content/exercises/*.yaml"]
+koyala = ["content/*.yaml", "content/exercises/*.yaml", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

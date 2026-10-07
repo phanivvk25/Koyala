@@ -5,7 +5,7 @@ import pytest
 from koyala.safety import crisis, lexicon
 from koyala.safety.assessor import RiskAssessor
 from koyala.safety.models import RiskCategory, RiskSignal, RiskTier
-from koyala.safety.risk_state import RiskStateStore
+from koyala.safety.risk_state import InMemoryRiskStateStore
 
 
 @pytest.mark.parametrize(
@@ -48,21 +48,21 @@ class _FixedClassifier:
 
 
 def test_classifier_failure_fails_safe_to_moderate():
-    assessor = RiskAssessor(RiskStateStore(), _BrokenClassifier())
+    assessor = RiskAssessor(InMemoryRiskStateStore(), _BrokenClassifier())
     result = assessor.assess("u1", "had a fine day")
     assert result.degraded
     assert result.tier == RiskTier.MODERATE
 
 
 def test_classifier_can_raise_but_lexicon_floor_holds():
-    assessor = RiskAssessor(RiskStateStore(), _FixedClassifier(RiskTier.NONE))
+    assessor = RiskAssessor(InMemoryRiskStateStore(), _FixedClassifier(RiskTier.NONE))
     assert assessor.assess("u1", "I want to kill myself").tier == RiskTier.HIGH
-    assessor = RiskAssessor(RiskStateStore(), _FixedClassifier(RiskTier.HIGH))
+    assessor = RiskAssessor(InMemoryRiskStateStore(), _FixedClassifier(RiskTier.HIGH))
     assert assessor.assess("u2", "fine").tier == RiskTier.HIGH
 
 
 def test_high_risk_is_sticky_for_72_hours():
-    states = RiskStateStore()
+    states = InMemoryRiskStateStore()
     assessor = RiskAssessor(states)
     t0 = datetime(2026, 1, 1, tzinfo=UTC)
     assert assessor.assess("u1", "I want to kill myself", now=t0).tier == RiskTier.HIGH
@@ -73,20 +73,20 @@ def test_high_risk_is_sticky_for_72_hours():
 
 
 def test_sticky_floor_does_not_leak_between_users():
-    assessor = RiskAssessor(RiskStateStore())
+    assessor = RiskAssessor(InMemoryRiskStateStore())
     assessor.assess("u1", "I want to kill myself")
     assert assessor.assess("u2", "ok").tier == RiskTier.NONE
 
 
 def test_follow_up_is_scheduled_after_moderate():
-    states = RiskStateStore()
+    states = InMemoryRiskStateStore()
     t0 = datetime(2026, 1, 1, tzinfo=UTC)
     RiskAssessor(states).assess("u1", "I wish I was dead", now=t0)
     assert states.get("u1").follow_up_due == t0 + timedelta(hours=24)
 
 
 def test_assessment_floor_expires():
-    states = RiskStateStore()
+    states = InMemoryRiskStateStore()
     t0 = datetime(2026, 1, 1, tzinfo=UTC)
     states.set_assessment_floor("u1", RiskTier.MODERATE, now=t0)
     assessor = RiskAssessor(states)
@@ -95,7 +95,7 @@ def test_assessment_floor_expires():
 
 
 def test_crisis_templates_select_by_tier_and_category():
-    assessor = RiskAssessor(RiskStateStore())
+    assessor = RiskAssessor(InMemoryRiskStateStore())
     imminent = crisis.crisis_response(assessor.assess("a", "I've taken all the pills"))
     assert imminent.template_id.startswith("crisis_t4")
     assert any(a.number == "112" for a in imminent.actions)

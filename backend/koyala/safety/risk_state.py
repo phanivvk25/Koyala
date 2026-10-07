@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
-from koyala.safety.models import RiskTier
+from koyala.safety.models import RiskCategory, RiskTier
 
 # After a turn at tier X, later turns are floored at STICKY_FLOOR[X] for STICKY_WINDOW.
 STICKY_FLOOR: dict[RiskTier, RiskTier] = {
@@ -41,9 +43,38 @@ class RiskState:
             floor = max(floor, self.assessment_floor)
         return floor
 
+    def apply_turn(self, tier: RiskTier, now: datetime) -> None:
+        in_window = self.peak_at and now - self.peak_at < STICKY_WINDOW
+        if tier >= RiskTier.HIGH and (not in_window or tier >= self.peak_tier):
+            self.peak_tier, self.peak_at = tier, now
+        if tier in FOLLOW_UP_AFTER:
+            due = now + FOLLOW_UP_AFTER[tier]
+            # Never push an existing, earlier follow-up further out.
+            if self.follow_up_due is None or due < self.follow_up_due:
+                self.follow_up_due = due
 
-class RiskStateStore:
-    """In-memory store. Replace with Redis-backed store (TDD §5.1) for production."""
+    def apply_assessment_floor(self, tier: RiskTier, now: datetime) -> None:
+        self.assessment_floor, self.assessment_floor_at = tier, now
+
+
+class RiskStateStore(Protocol):
+    def get(self, user_id: str) -> RiskState: ...
+
+    def record_turn(
+        self,
+        user_id: str,
+        tier: RiskTier,
+        now: datetime | None = None,
+        categories: Iterable[RiskCategory] = (),
+    ) -> RiskState: ...
+
+    def set_assessment_floor(
+        self, user_id: str, tier: RiskTier, now: datetime | None = None
+    ) -> None: ...
+
+
+class InMemoryRiskStateStore:
+    """For tests and local development; state is lost on restart."""
 
     def __init__(self) -> None:
         self._states: dict[str, RiskState] = {}
@@ -51,26 +82,24 @@ class RiskStateStore:
 
     def get(self, user_id: str) -> RiskState:
         with self._lock:
-            return self._states.setdefault(user_id, RiskState())
+            return replace(self._states.get(user_id) or RiskState())
 
-    def record_turn(self, user_id: str, tier: RiskTier, now: datetime | None = None) -> RiskState:
+    def record_turn(
+        self,
+        user_id: str,
+        tier: RiskTier,
+        now: datetime | None = None,
+        categories: Iterable[RiskCategory] = (),
+    ) -> RiskState:
         now = now or datetime.now(UTC)
         with self._lock:
             state = self._states.setdefault(user_id, RiskState())
-            in_window = state.peak_at and now - state.peak_at < STICKY_WINDOW
-            if tier >= RiskTier.HIGH and (not in_window or tier >= state.peak_tier):
-                state.peak_tier, state.peak_at = tier, now
-            if tier in FOLLOW_UP_AFTER:
-                due = now + FOLLOW_UP_AFTER[tier]
-                # Never push an existing, earlier follow-up further out.
-                if state.follow_up_due is None or due < state.follow_up_due:
-                    state.follow_up_due = due
-            return state
+            state.apply_turn(tier, now)
+            return replace(state)
 
     def set_assessment_floor(
         self, user_id: str, tier: RiskTier, now: datetime | None = None
     ) -> None:
         now = now or datetime.now(UTC)
         with self._lock:
-            state = self._states.setdefault(user_id, RiskState())
-            state.assessment_floor, state.assessment_floor_at = tier, now
+            self._states.setdefault(user_id, RiskState()).apply_assessment_floor(tier, now)

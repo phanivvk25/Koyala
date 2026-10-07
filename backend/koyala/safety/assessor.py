@@ -71,7 +71,7 @@ class RiskAssessor:
         for s in signals:
             categories |= s.categories
 
-        self._states.record_turn(user_id, tier, now)
+        self._states.record_turn(user_id, tier, now, categories)
         return RiskAssessment(
             tier=tier,
             categories=frozenset(categories),

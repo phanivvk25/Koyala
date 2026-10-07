@@ -79,7 +79,9 @@ def send_message(
     orchestrator: Annotated[Orchestrator, Depends(_orchestrator)],
 ) -> schemas.TurnOut:
     session = _owned_session(session_id, user_id, sessions)
-    return _turn_out(orchestrator.handle(session, body.text))
+    result = orchestrator.handle(session, body.text)
+    sessions.save(session)
+    return _turn_out(result)
 
 
 @router.post("/sessions/{session_id}/exercise", response_model=schemas.TurnOut)
@@ -92,9 +94,11 @@ def start_exercise(
 ) -> schemas.TurnOut:
     session = _owned_session(session_id, user_id, sessions)
     try:
-        return _turn_out(orchestrator.start_exercise(session, body.exercise_id))
+        result = orchestrator.start_exercise(session, body.exercise_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="exercise not found") from None
+    sessions.save(session)
+    return _turn_out(result)
 
 
 @router.get("/exercises", response_model=list[schemas.ExerciseOut])

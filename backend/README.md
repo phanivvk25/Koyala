@@ -12,6 +12,7 @@ Python/FastAPI implementation of the safety-critical core described in
 | `koyala/protocols/` | Deterministic exercise engine (YAML-defined) | TDD §7.3 |
 | `koyala/assessments/` | PHQ-9 / GAD-7 / WHO-5 scoring, PHQ-9 item-9 flag | PRD FR-ONB-06/09 |
 | `koyala/api/` | REST API v1 | TDD §7.1 |
+| `koyala/db/` | PostgreSQL schema, Alembic migrations, SQL stores, envelope encryption | TDD §6, §9 |
 | `koyala/content/` | Crisis templates, helplines, exercises (**placeholder — needs clinical approval**) | Safety Protocol §5 |
 
 ## Safety guarantees enforced in code (and tested)
@@ -34,6 +35,31 @@ pytest -q
 uvicorn koyala.main:app --reload   # needs: pip install uvicorn
 ```
 
+### Using PostgreSQL
+
+Without `KOYALA_DATABASE_URL` the app uses in-memory storage (lost on restart).
+
+```bash
+docker compose up -d db                       # from the repo root
+cp .env.example .env && set -a && . ./.env && set +a
+export KOYALA_MASTER_KEY=$(python -c "from koyala.db.crypto import Crypto; print(Crypto.generate_key())")
+python -m koyala.db.migrate                   # apply migrations
+uvicorn koyala.main:app --reload
+```
+
+| Table | Contents |
+|---|---|
+| `users` | User id + per-user data key (wrapped by the master key) |
+| `chat_sessions` | Session metadata; active exercise state (**encrypted**) |
+| `messages` | Conversation history (**encrypted**, AES-256-GCM, bound to the user) |
+| `risk_states` | Sticky risk floor, PHQ-9 floor, follow-up due time |
+| `risk_events` | Audit trail of tier ≥ 2 turns (tier + categories, no content) |
+
+Schema changes: edit `koyala/db/models.py`, then
+`alembic revision --autogenerate -m "..."` and review the generated file.
+Tests check the migrations match the models, on SQLite always and on
+PostgreSQL when `KOYALA_TEST_DATABASE_URL` is set (CI does this).
+
 ### Using Claude as the model
 
 ```bash
@@ -52,7 +78,7 @@ export KOYALA_LLM_EFFORT=medium           # optional: low | medium | high
 ## Not yet production-ready
 
 - **Auth**: callers pass `X-User-Id`; replace with real auth before any deployment.
-- **Storage**: in-memory; move to PostgreSQL with encrypted content columns.
+- **Storage**: PostgreSQL supported; master key is an env var and should move to a cloud KMS. Assessments, mood logs, journal and safety plans are not stored yet.
 - **LLM**: Claude provider available; redaction does not yet cover person/place names (needs NER).
 - **Risk classifier (C4)**: interface only; lexicon is a placeholder needing clinical/linguistic review.
 - **Content**: all crisis text, helplines and exercises must be clinically approved and verified.
