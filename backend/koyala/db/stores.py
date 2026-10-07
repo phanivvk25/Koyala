@@ -8,13 +8,21 @@ from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
+from koyala.auth.refresh import (
+    REFRESH_TTL,
+    InvalidRefreshToken,
+    RefreshTokenReused,
+    hash_token,
+    new_token,
+    new_user_id,
+)
 from koyala.db.crypto import Crypto
-from koyala.db.models import ChatSession, Message, RiskEvent, RiskStateRow, User
+from koyala.db.models import ChatSession, Message, RefreshToken, RiskEvent, RiskStateRow, User
 from koyala.dialogue.llm import ChatMessage
 from koyala.protocols.engine import ExerciseRun
 from koyala.safety.models import RiskCategory, RiskTier
@@ -29,11 +37,11 @@ def make_session_factory(engine: Engine) -> sessionmaker[DbSession]:
     return sessionmaker(engine, expire_on_commit=False)
 
 
-def _ensure_user(db: DbSession, crypto: Crypto, user_id: str) -> User:
+def _ensure_user(db: DbSession, crypto: Crypto, user_id: str, auth_type: str = "anonymous") -> User:
     user = db.get(User, user_id)
     if user is not None:
         return user
-    user = User(id=user_id, dek_wrapped=crypto.new_wrapped_dek(user_id))
+    user = User(id=user_id, dek_wrapped=crypto.new_wrapped_dek(user_id), auth_type=auth_type)
     try:
         with db.begin_nested():
             db.add(user)
@@ -180,6 +188,76 @@ class SqlRiskStateStore:
         except IntegrityError:
             pass  # Created concurrently; the locked select below picks it up.
         return db.scalars(query).one()
+
+
+class SqlAuthStore:
+    def __init__(self, factory: sessionmaker[DbSession], crypto: Crypto) -> None:
+        self._factory = factory
+        self._crypto = crypto
+
+    def create_anonymous_user(self) -> str:
+        user_id = new_user_id()
+        with self._factory.begin() as db:
+            _ensure_user(db, self._crypto, user_id, auth_type="anonymous")
+        return user_id
+
+    def issue_refresh(
+        self, user_id: str, family_id: str | None = None, now: datetime | None = None
+    ) -> str:
+        now = now or datetime.now(UTC)
+        with self._factory.begin() as db:
+            return self._issue(db, user_id, family_id or uuid.uuid4().hex, now)
+
+    def rotate(self, raw: str, now: datetime | None = None) -> tuple[str, str]:
+        now = now or datetime.now(UTC)
+        reused = False
+        with self._factory.begin() as db:
+            row = db.scalars(
+                select(RefreshToken)
+                .where(RefreshToken.token_hash == hash_token(raw))
+                .with_for_update()
+            ).one_or_none()
+            if row is None or row.revoked_at is not None:
+                raise InvalidRefreshToken("unknown or revoked token")
+            if row.used_at is not None:
+                self._revoke_family(db, row.family_id, now)
+                reused = True
+            elif now >= _utc(row.expires_at):
+                raise InvalidRefreshToken("expired token")
+            else:
+                row.used_at = now
+                return row.user_id, self._issue(db, row.user_id, row.family_id, now)
+        # Raised after the transaction commits so the family revocation sticks.
+        assert reused
+        raise RefreshTokenReused("refresh token reused; family revoked")
+
+    def revoke(self, raw: str) -> None:
+        with self._factory.begin() as db:
+            row = db.get(RefreshToken, hash_token(raw))
+            if row is not None:
+                self._revoke_family(db, row.family_id, datetime.now(UTC))
+
+    @staticmethod
+    def _issue(db: DbSession, user_id: str, family_id: str, now: datetime) -> str:
+        raw = new_token()
+        db.add(
+            RefreshToken(
+                token_hash=hash_token(raw),
+                user_id=user_id,
+                family_id=family_id,
+                created_at=now,
+                expires_at=now + REFRESH_TTL,
+            )
+        )
+        return raw
+
+    @staticmethod
+    def _revoke_family(db: DbSession, family_id: str, now: datetime) -> None:
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
 
 
 def _to_state(row: RiskStateRow) -> RiskState:

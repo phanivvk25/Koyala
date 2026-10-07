@@ -3,8 +3,7 @@ from fastapi.testclient import TestClient
 
 from koyala.dialogue.llm import LLMUnavailable
 from koyala.main import create_app
-
-USER = {"X-User-Id": "user-1"}
+from tests.conftest import sign_up
 
 
 class SpyLLM:
@@ -21,14 +20,16 @@ class SpyLLM:
 
 
 def _client(llm=None):
-    return TestClient(create_app(llm=llm or SpyLLM()))
+    client = TestClient(create_app(llm=llm or SpyLLM()))
+    client.headers.update(sign_up(client))
+    return client
 
 
-def _session(client, headers=USER):
+def _session(client, headers=None):
     return client.post("/v1/sessions", json={}, headers=headers).json()["session_id"]
 
 
-def _say(client, sid, text, headers=USER):
+def _say(client, sid, text, headers=None):
     r = client.post(f"/v1/sessions/{sid}/messages", json={"text": text}, headers=headers)
     assert r.status_code == 200, r.text
     return r.json()
@@ -92,9 +93,7 @@ def test_exercise_flow_and_crisis_interrupts_it():
     offer = _say(client, sid, "can you help me calm down")
     assert any(a["ref"] == "grounding_54321" for a in offer["actions"])
 
-    r = client.post(
-        f"/v1/sessions/{sid}/exercise", json={"exercise_id": "grounding_54321"}, headers=USER
-    )
+    r = client.post(f"/v1/sessions/{sid}/exercise", json={"exercise_id": "grounding_54321"})
     assert r.json()["step_id"] == "intro"
     assert _say(client, sid, "ready")["step_id"] == "see_5"
 
@@ -107,7 +106,7 @@ def test_exercise_flow_and_crisis_interrupts_it():
 def test_exercise_can_be_stopped():
     client = _client()
     sid = _session(client)
-    client.post(f"/v1/sessions/{sid}/exercise", json={"exercise_id": "box_breathing"}, headers=USER)
+    client.post(f"/v1/sessions/{sid}/exercise", json={"exercise_id": "box_breathing"})
     out = _say(client, sid, "stop")
     assert out["type"] == "message"
     assert "stop" in out["text"].lower()
@@ -116,23 +115,22 @@ def test_exercise_can_be_stopped():
 def test_sessions_are_private_to_their_user():
     client = _client()
     sid = _session(client)
-    r = client.post(
-        f"/v1/sessions/{sid}/messages", json={"text": "hi"}, headers={"X-User-Id": "intruder"}
-    )
+    r = client.post(f"/v1/sessions/{sid}/messages", json={"text": "hi"}, headers=sign_up(client))
     assert r.status_code == 404
 
 
-def test_missing_user_header_rejected():
-    client = _client()
-    assert client.post("/v1/sessions", json={}).status_code == 422
+def test_requests_without_valid_token_rejected():
+    client = TestClient(create_app(llm=SpyLLM()))
+    assert client.post("/v1/sessions", json={}).status_code == 401
+    bad = {"Authorization": "Bearer not-a-jwt"}
+    assert client.post("/v1/sessions", json={}, headers=bad).status_code == 401
+    assert client.post("/v1/assessments", json={}, headers=bad).status_code == 401
 
 
 def test_phq9_item9_triggers_follow_up_and_risk_floor():
     llm = SpyLLM()
     client = _client(llm)
-    r = client.post(
-        "/v1/assessments", json={"instrument": "PHQ9", "item_scores": [1] * 9}, headers=USER
-    )
+    r = client.post("/v1/assessments", json={"instrument": "PHQ9", "item_scores": [1] * 9})
     body = r.json()
     assert body["self_harm_flag"] and body["follow_up"]["risk_tier"] == 2
 
@@ -144,9 +142,7 @@ def test_phq9_item9_triggers_follow_up_and_risk_floor():
 @pytest.mark.parametrize("items", [[0] * 3, [9] * 9])
 def test_invalid_assessment_rejected(items):
     client = _client()
-    r = client.post(
-        "/v1/assessments", json={"instrument": "PHQ9", "item_scores": items}, headers=USER
-    )
+    r = client.post("/v1/assessments", json={"instrument": "PHQ9", "item_scores": items})
     assert r.status_code == 422
 
 

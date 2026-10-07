@@ -30,6 +30,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Per-user data key, wrapped by the master key (koyala.db.crypto).
     dek_wrapped: Mapped[bytes] = mapped_column(LargeBinary)
+    # How the account was created: "anonymous" now; "phone" / "email" / "sso" later.
+    auth_type: Mapped[str] = mapped_column(String(16), server_default="anonymous")
 
 
 class ChatSession(Base):
@@ -79,3 +81,18 @@ class RiskEvent(Base):
     tier: Mapped[int] = mapped_column(SmallInteger)
     categories: Mapped[list[str]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RefreshToken(Base):
+    """Refresh tokens (hashed). See koyala.auth.refresh."""
+
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (Index("ix_refresh_tokens_family", "family_id"),)
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    family_id: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

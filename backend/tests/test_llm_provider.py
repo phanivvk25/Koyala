@@ -9,6 +9,7 @@ from koyala.dialogue.anthropic_provider import FALLBACK_BETA, AnthropicProvider
 from koyala.dialogue.llm import ChatMessage, LLMUnavailable
 from koyala.dialogue.redact import redact
 from koyala.main import create_app
+from tests.conftest import sign_up
 
 _REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
@@ -84,7 +85,7 @@ def test_failures_raise_llm_unavailable(result):
 def test_provider_failure_yields_fallback_through_api():
     provider = AnthropicProvider(client=FakeClient(_response(stop_reason="refusal")))
     client = TestClient(create_app(llm=provider))
-    headers = {"X-User-Id": "u1"}
+    headers = sign_up(client)
     sid = client.post("/v1/sessions", json={}, headers=headers).json()["session_id"]
     out = client.post(f"/v1/sessions/{sid}/messages", json={"text": "hi"}, headers=headers).json()
     assert out["type"] == "fallback"
@@ -115,7 +116,7 @@ def test_orchestrator_sends_only_redacted_text():
             return "Thanks for sharing."
 
     client = TestClient(create_app(llm=Capture()))
-    headers = {"X-User-Id": "u1"}
+    headers = sign_up(client)
     sid = client.post("/v1/sessions", json={}, headers=headers).json()["session_id"]
     client.post(
         f"/v1/sessions/{sid}/messages",
