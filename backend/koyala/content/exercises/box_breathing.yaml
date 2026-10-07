@@ -1,0 +1,27 @@
+# PLACEHOLDER CONTENT — requires clinical review and translation before use.
+id: box_breathing
+version: 1
+approved: false
+title: { en: "Box Breathing" }
+duration_min: 2
+indications: [anxiety, stress, sleep]
+steps:
+  - id: intro
+    llm_paraphrase: true
+    text:
+      en: >-
+        Let's slow your breathing down together. Sit comfortably and let your
+        shoulders drop. Tell me when you're ready.
+  - id: cycle
+    expects_reply: true
+    text:
+      en: >-
+        Breathe in through your nose for 4 counts… hold for 4… breathe out
+        slowly for 4… hold for 4. Repeat this four times, then tell me when
+        you're done.
+  - id: close
+    llm_paraphrase: true
+    text:
+      en: >-
+        Nicely done. You can come back to this breathing any time you feel
+        tense. How does your body feel now?

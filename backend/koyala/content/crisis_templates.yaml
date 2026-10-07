@@ -1,0 +1,57 @@
+# Crisis response templates (Clinical Safety Protocol §5).
+#
+# PLACEHOLDER TEXT — NOT CLINICALLY APPROVED.
+# Every template must be authored/approved by the Clinical Advisory Board and
+# translated by clinicians before user exposure. Changing a template requires
+# bumping its version.
+templates:
+  - id: crisis_t4
+    version: 1
+    tier: 4
+    approved: false
+    text:
+      en: >-
+        I'm really worried about your safety right now. Please call 112 or get to
+        the nearest hospital immediately. If you can, move away from anything you
+        could use to hurt yourself, and tell someone near you what is happening.
+        Are you safe right now? I'm staying right here with you.
+    resources: [emergency, tele_manas]
+    actions: [call, handoff, safety_plan]
+
+  - id: crisis_t3
+    version: 1
+    tier: 3
+    approved: false
+    text:
+      en: >-
+        I'm really glad you told me. What you're going through sounds incredibly
+        painful, and I'm concerned about your safety. Are you safe right now?
+        You don't have to go through this alone — you can talk to a trained
+        counsellor right now. I'm here with you while you reach out.
+    resources: [tele_manas, emergency]
+    actions: [call, handoff, safety_plan]
+
+  - id: crisis_t3_abuse
+    version: 1
+    tier: 3
+    categories: [ABU]
+    approved: false
+    text:
+      en: >-
+        Thank you for trusting me with this. What's happening to you is not your
+        fault, and you deserve to be safe. Are you safe right now? If you are in
+        danger, please call 112. You can also talk to someone who can help.
+    resources: [emergency, women_helpline, childline, tele_manas]
+    actions: [call, handoff]
+
+  - id: fallback_unavailable
+    version: 1
+    tier: 0
+    approved: false
+    text:
+      en: >-
+        I'm having trouble responding right now. If you need to talk to someone,
+        help is available any time. You could also try one of the calming
+        exercises while I get back on my feet.
+    resources: [tele_manas]
+    actions: [call, exercises]
