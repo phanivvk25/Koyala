@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from koyala.api.auth_routes import router as auth_router
+from koyala.api.escalation_routes import router as escalation_router
 from koyala.api.routes import router
 from koyala.api.tracking_routes import router as tracking_router
 from koyala.auth.refresh import AuthStore, InMemoryAuthStore
@@ -29,6 +30,15 @@ from koyala.auth.service import AuthService
 from koyala.auth.tokens import TokenService
 from koyala.dialogue.llm import LLMProvider, StubProvider
 from koyala.dialogue.orchestrator import Orchestrator
+from koyala.escalation import (
+    CrisisPartner,
+    EscalationService,
+    EscalationStore,
+    InMemoryEscalationStore,
+    LogPager,
+    Pager,
+    StubPartner,
+)
 from koyala.safety.assessor import RiskAssessor, RiskClassifier
 from koyala.safety.risk_state import InMemoryRiskStateStore, RiskStateStore
 from koyala.store import InMemorySessionStore, SessionStore
@@ -43,6 +53,7 @@ class Stores:
     risk_states: RiskStateStore
     auth: AuthStore
     tracking: TrackingStore
+    escalations: EscalationStore
     persistent: bool = False
 
 
@@ -76,12 +87,14 @@ def _default_stores() -> Stores:
             InMemoryRiskStateStore(),
             InMemoryAuthStore(),
             InMemoryTrackingStore(),
+            InMemoryEscalationStore(),
         )
     from sqlalchemy import create_engine
 
     from koyala.db.crypto import Crypto
     from koyala.db.stores import (
         SqlAuthStore,
+        SqlEscalationStore,
         SqlRiskStateStore,
         SqlSessionStore,
         SqlTrackingStore,
@@ -95,6 +108,7 @@ def _default_stores() -> Stores:
         SqlRiskStateStore(factory, crypto),
         SqlAuthStore(factory, crypto),
         SqlTrackingStore(factory, crypto),
+        SqlEscalationStore(factory, crypto),
         persistent=True,
     )
 
@@ -115,6 +129,8 @@ def create_app(
     classifier: RiskClassifier | None = None,
     stores: Stores | None = None,
     jwt_secret: str | None = None,
+    partner: CrisisPartner | None = None,
+    pager: Pager | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Koyala API", version="0.1.0")
     stores = stores or _default_stores()
@@ -123,6 +139,9 @@ def create_app(
     app.state.risk_states = stores.risk_states
     app.state.sessions = stores.sessions
     app.state.tracking = stores.tracking
+    app.state.escalations = EscalationService(
+        stores.escalations, partner or StubPartner(), pager or LogPager()
+    )
     app.state.assessor = RiskAssessor(stores.risk_states, classifier or _default_classifier())
     app.state.orchestrator = Orchestrator(
         assessor=app.state.assessor,
@@ -131,6 +150,7 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(router)
     app.include_router(tracking_router)
+    app.include_router(escalation_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
