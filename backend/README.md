@@ -59,6 +59,22 @@ clinical measure — a clinician-labelled golden set and a trained classifier (C
 are required before launch. `tests/test_risk_eval.py` pins today's numbers as a
 no-regression floor.
 
+### LLM risk judge (optional)
+
+`KOYALA_RISK_JUDGE=anthropic` adds a Claude-based second opinion on risk
+(`koyala/safety/judge.py`, AI Model Spec C5):
+
+- Runs on every message the lexicon did not already place at tier ≥ 3, with
+  PII-redacted text and the last 4 messages as context; structured JSON output.
+- **Raise-only**: combined by `max()`, so it can never lower a lexicon or floor tier.
+- Error, timeout, refusal or bad output → assessor fails safe to tier 2.
+- Adds one model call (low effort) per message: expect added latency and cost.
+
+Measure it before enabling: `python -m koyala.evals.risk_eval --judge`
+(needs Anthropic credentials). Judge on a set its prompt was **not** written
+against — the starter set was written by the same author, so its numbers will be
+optimistic.
+
 ## Authentication
 
 ```
