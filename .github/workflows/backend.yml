@@ -34,3 +34,5 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+      - name: Risk evaluation report (not yet a gate; see koyala/evals/data/README.md)
+        run: python -m koyala.evals.risk_eval >> "$GITHUB_STEP_SUMMARY"
