@@ -1,0 +1,30 @@
+# Helpline directory (Clinical Safety Protocol §6).
+# Owner: Clinical Lead. Every entry must be re-verified monthly; update last_verified.
+# All numbers below are marked unverified until checked against official sources.
+country: IN
+resources:
+  - id: emergency
+    label: { en: "Emergency services", hi: "आपातकालीन सेवाएँ", te: "అత్యవసర సేవలు" }
+    number: "112"
+    categories: [SUI, MED, HTO, ABU]
+    available: "24x7"
+    last_verified: null
+  - id: tele_manas
+    label: { en: "Tele-MANAS (mental health helpline)", hi: "टेली-मानस", te: "టెలి-మానస్" }
+    number: "14416"
+    alt_numbers: ["1-800-891-4416"]
+    categories: [SUI, NSSI, DIS, PSY, EAT, SUB]
+    available: "24x7"
+    last_verified: null
+  - id: childline
+    label: { en: "Child helpline", hi: "चाइल्ड हेल्पलाइन", te: "చైల్డ్ హెల్ప్‌లైన్" }
+    number: "1098"
+    categories: [ABU, MIN]
+    available: "24x7"
+    last_verified: null
+  - id: women_helpline
+    label: { en: "Women's helpline", hi: "महिला हेल्पलाइन", te: "మహిళా హెల్ప్‌లైన్" }
+    number: "181"
+    categories: [ABU]
+    available: "24x7"
+    last_verified: null

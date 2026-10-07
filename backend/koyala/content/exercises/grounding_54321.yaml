@@ -1,0 +1,35 @@
+# PLACEHOLDER CONTENT — requires clinical review and translation before use.
+id: grounding_54321
+version: 1
+approved: false
+title: { en: "5-4-3-2-1 Grounding" }
+duration_min: 3
+indications: [anxiety, panic, overwhelm]
+steps:
+  - id: intro
+    llm_paraphrase: true
+    text:
+      en: >-
+        Let's try a short grounding exercise together. It helps bring your
+        attention back to the present moment. Take a slow breath when you're ready.
+  - id: see_5
+    expects_reply: true
+    text: { en: "Look around you. Name 5 things you can see." }
+  - id: touch_4
+    expects_reply: true
+    text: { en: "Now notice 4 things you can feel or touch." }
+  - id: hear_3
+    expects_reply: true
+    text: { en: "Listen carefully. What are 3 things you can hear?" }
+  - id: smell_2
+    expects_reply: true
+    text: { en: "Name 2 things you can smell — or 2 smells you like." }
+  - id: taste_1
+    expects_reply: true
+    text: { en: "And 1 thing you can taste right now." }
+  - id: close
+    llm_paraphrase: true
+    text:
+      en: >-
+        Well done. Take one more slow breath. How are you feeling now, compared
+        with before we started?
