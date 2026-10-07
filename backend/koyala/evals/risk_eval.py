@@ -1,6 +1,6 @@
 """Risk-detection evaluation (AI Model Spec §9.1).
 
-    python -m koyala.evals.risk_eval [path/to/set.jsonl] [--json]
+    python -m koyala.evals.risk_eval [path/to/set.jsonl] [--json] [--judge]
 
 Runs the production RiskAssessor (lexicon + optional classifier) over a
 labelled set, with fresh risk state per message so sticky floors don't leak
@@ -197,10 +197,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", nargs="?", type=Path, default=DEFAULT_SET)
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="include the LLM risk judge (needs Anthropic credentials; makes API calls)",
+    )
+    parser.add_argument(
         "--enforce-gates", action="store_true", help="exit 1 if any release gate fails"
     )
     args = parser.parse_args(argv)
-    report = evaluate(args.path)
+    classifier = None
+    if args.judge:
+        from koyala.safety.judge import LLMRiskJudge
+
+        classifier = LLMRiskJudge()
+    report = evaluate(args.path, classifier)
     if args.json:
         print(json.dumps({**asdict(report), "gates": report.gates}, indent=2, ensure_ascii=False))
     else:

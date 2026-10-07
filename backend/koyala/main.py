@@ -3,6 +3,9 @@
 KOYALA_LLM_PROVIDER selects the model backend: "stub" (default, offline) or
 "anthropic" (needs Anthropic credentials, e.g. ANTHROPIC_API_KEY).
 
+KOYALA_RISK_JUDGE=anthropic adds the LLM risk judge (raise-only second opinion
+on risk; needs Anthropic credentials). Default: off.
+
 KOYALA_DATABASE_URL (e.g. postgresql+psycopg://user:pass@host/koyala) switches
 storage from in-memory to the database; KOYALA_MASTER_KEY and
 KOYALA_JWT_SECRET are then required. Run migrations first:
@@ -52,6 +55,17 @@ def _default_llm() -> LLMProvider:
     if provider == "stub":
         return StubProvider()
     raise ValueError(f"unknown KOYALA_LLM_PROVIDER: {provider}")
+
+
+def _default_classifier() -> RiskClassifier | None:
+    judge = os.environ.get("KOYALA_RISK_JUDGE", "off")
+    if judge == "anthropic":
+        from koyala.safety.judge import LLMRiskJudge
+
+        return LLMRiskJudge()
+    if judge == "off":
+        return None
+    raise ValueError(f"unknown KOYALA_RISK_JUDGE: {judge}")
 
 
 def _default_stores() -> Stores:
@@ -109,7 +123,7 @@ def create_app(
     app.state.risk_states = stores.risk_states
     app.state.sessions = stores.sessions
     app.state.tracking = stores.tracking
-    app.state.assessor = RiskAssessor(stores.risk_states, classifier)
+    app.state.assessor = RiskAssessor(stores.risk_states, classifier or _default_classifier())
     app.state.orchestrator = Orchestrator(
         assessor=app.state.assessor,
         llm=llm or _default_llm(),
