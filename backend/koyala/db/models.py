@@ -115,3 +115,24 @@ class UserRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     private: Mapped[bool] = mapped_column(Boolean, default=False)
     payload_enc: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class EscalationRow(Base):
+    """Counsellor handoff requests (koyala.escalation). No message content."""
+
+    __tablename__ = "escalations"
+    __table_args__ = (Index("ix_escalations_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    risk_tier: Mapped[int] = mapped_column(SmallInteger)
+    categories: Mapped[list[str]] = mapped_column(JSON)
+    language: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    callback_number_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    partner_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sla_breached: Mapped[bool] = mapped_column(Boolean, default=False)
