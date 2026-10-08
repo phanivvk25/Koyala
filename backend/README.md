@@ -107,6 +107,34 @@ POST /v1/auth/logout   {refresh_token} → 204, revokes that sign-in's tokens
 - Not yet: phone OTP / email sign-in (needs an SMS provider), rate limiting on
   sign-up (planned at the API gateway, TDD §3).
 
+## Run with Docker (whole stack)
+
+```bash
+./scripts/dev-env.sh          # once, from the repo root: writes .env with local-only secrets
+docker compose up --build     # db + migrations + API + background jobs
+```
+
+Then open http://localhost:8000/docs. Ports are bound to `127.0.0.1` only.
+
+| Service | What it does |
+|---|---|
+| `db` | PostgreSQL 16 (data in the `koyala-db` volume) |
+| `migrate` | Applies migrations, then exits |
+| `api` | The API on port 8000 (`koyala-api:dev` image) |
+| `jobs` | `python -m koyala.jobs scheduler`: escalation sweep every minute, follow-ups every 5 minutes |
+
+Useful commands:
+
+```bash
+docker compose logs -f api jobs        # follow logs
+docker compose down                    # stop (keeps data)
+docker compose down -v                 # stop and delete all local data
+```
+
+To use Claude instead of the offline stub, set `KOYALA_LLM_PROVIDER=anthropic` and
+`ANTHROPIC_API_KEY` in `.env`, then `docker compose up -d`.
+Local Docker is for **synthetic test data only**.
+
 ## Run
 
 ```bash

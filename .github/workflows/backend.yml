@@ -2,9 +2,9 @@ name: backend
 
 on:
   push:
-    paths: ["backend/**", ".github/workflows/backend.yml"]
+    paths: ["backend/**", "docker-compose.yml", ".github/workflows/backend.yml"]
   pull_request:
-    paths: ["backend/**", ".github/workflows/backend.yml"]
+    paths: ["backend/**", "docker-compose.yml", ".github/workflows/backend.yml"]
 
 jobs:
   test:
@@ -36,3 +36,16 @@ jobs:
       - run: pytest -q
       - name: Risk evaluation report (not yet a gate; see koyala/evals/data/README.md)
         run: python -m koyala.evals.risk_eval >> "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t koyala-api:ci backend
+      - name: Smoke test (in-memory mode)
+        run: |
+          docker run -d --name api -p 8000:8000 koyala-api:ci
+          for i in $(seq 1 30); do curl -fsS localhost:8000/healthz && exit 0; sleep 1; done
+          docker logs api
+          exit 1

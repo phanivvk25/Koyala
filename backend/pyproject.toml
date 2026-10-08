@@ -13,6 +13,7 @@ dependencies = [
   "alembic>=1.13",
   "cryptography>=42",
   "pyjwt>=2.8",
+  "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
