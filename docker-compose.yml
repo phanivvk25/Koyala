@@ -1,8 +1,20 @@
-# Local development database. Production uses a managed PostgreSQL in an
-# India cloud region with encryption at rest (docs/04-TDD §3, docs/07 §8).
+# Local stack: PostgreSQL + migrations + API + background jobs.
 #
-#   docker compose up -d db
-#   cp backend/.env.example backend/.env   # then fill in KOYALA_MASTER_KEY
+#   ./scripts/dev-env.sh        # once: writes .env with generated local secrets
+#   docker compose up --build   # API on http://localhost:8000/docs
+#
+# For local testing with synthetic data only. Production uses managed
+# PostgreSQL and a secrets manager in an India region (docs/04-TDD §3, docs/07 §8).
+
+x-koyala-env: &koyala-env
+  KOYALA_DATABASE_URL: postgresql+psycopg://koyala:koyala-dev-only@db:5432/koyala
+  KOYALA_MASTER_KEY: ${KOYALA_MASTER_KEY:?run ./scripts/dev-env.sh first}
+  KOYALA_JWT_SECRET: ${KOYALA_JWT_SECRET:?run ./scripts/dev-env.sh first}
+  KOYALA_LLM_PROVIDER: ${KOYALA_LLM_PROVIDER:-stub}
+  KOYALA_RISK_JUDGE: ${KOYALA_RISK_JUDGE:-off}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  KOYALA_PARTNER_TOKEN: ${KOYALA_PARTNER_TOKEN:-}
+
 services:
   db:
     image: postgres:16
@@ -11,7 +23,7 @@ services:
       POSTGRES_PASSWORD: koyala-dev-only
       POSTGRES_DB: koyala
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - koyala-db:/var/lib/postgresql/data
     healthcheck:
@@ -19,6 +31,37 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    build: ./backend
+    image: koyala-api:dev
+    command: ["python", "-m", "koyala.db.migrate"]
+    environment: *koyala-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: koyala-api:dev
+    environment: *koyala-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  jobs:
+    image: koyala-api:dev
+    command: ["python", "-m", "koyala.jobs", "scheduler"]
+    environment: *koyala-env
+    healthcheck:
+      disable: true  # no HTTP server in this container
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   koyala-db:
